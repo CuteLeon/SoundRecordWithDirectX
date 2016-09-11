@@ -6,23 +6,20 @@ Imports Microsoft.DirectX.DirectSound
 Public Class SoundRecord
 
 #Region "成员数据"
-    Private mCapDev As Capture = Nothing ' 音频捕捉设备
-    Private mRecBuffer As CaptureBuffer = Nothing     ' 缓冲区对象
-    Private mWavFormat As WaveFormat             ' 录音的格式
-
-    Private mNextCaptureOffset As Integer = 0         ' 该次录音缓冲区的起始点
-    Private mSampleCount As Integer = 0               ' 录制的样本数目
-
-    Private mNotify As Notify = Nothing               ' 消息通知对象
-    Public Const cNotifyNum As Integer = 16           ' 通知的个数
-    Private mNotifySize As Integer = 0                ' 每次通知大小
-    Private mBufferSize As Integer = 0                ' 缓冲队列大小
-    Private mNotifyThread As Thread = Nothing                 ' 处理缓冲区消息的线程
-    Private mNotificationEvent As AutoResetEvent = Nothing    ' 通知事件
-
-    Private mFileName As String = String.Empty     ' 文件保存路径
-    Private mWaveFile As FileStream = Nothing         ' 文件流
-    Private mWriter As BinaryWriter = Nothing         ' 写文件
+    Private CaptureDevice As Capture = Nothing ' 音频捕捉设备
+    Private CaptureBuffer As CaptureBuffer = Nothing     ' 缓冲区对象
+    Private WaveFormat As WaveFormat             ' 录音的格式
+    Private NextCaptureOffset As Integer = 0         ' 该次录音缓冲区的起始点
+    Private SampleCount As Integer = 0               ' 录制的样本数目
+    Private NotifyObject As Notify = Nothing               ' 消息通知对象
+    Public Const NotifyCount As Integer = 16           ' 通知的个数
+    Private NotifySize As Integer = 0                ' 每次通知大小
+    Private BufferSize As Integer = 0                ' 缓冲队列大小
+    Private NotifyThread As Thread = Nothing                 ' 处理缓冲区消息的线程
+    Private NotificationEvent As AutoResetEvent = Nothing    ' 通知事件
+    Private FileName As String = String.Empty     ' 文件保存路径
+    Private WaveFile As FileStream = Nothing         ' 文件流
+    Private Writer As BinaryWriter = Nothing         ' 写文件
 #End Region
 
 #Region "对外操作函数"
@@ -30,10 +27,8 @@ Public Class SoundRecord
     ''' 构造函数,设定录音设备,设定录音格式.
     ''' </summary>
     Public Sub New()
-        ' 初始化音频捕捉设备
-        InitCaptureDevice()
-        ' 设定录音格式
-        mWavFormat = CreateWaveFormat()
+        InitCaptureDevice()        ' 初始化音频捕捉设备
+        WaveFormat = CreateWaveFormat() ' 设定录音格式
     End Sub
 
     ''' <summary>
@@ -42,7 +37,7 @@ Public Class SoundRecord
     Private Function CreateWaveFormat() As WaveFormat
         Dim format As WaveFormat = New WaveFormat()
         format.FormatTag = WaveFormatTag.Pcm   ' PCM
-        format.SamplesPerSecond = 16000        ' 采样率：16KHz，人耳课识别最高 48KHz
+        format.SamplesPerSecond = 16000        ' 采样率：16KHz，人耳可以识别最高 48KHz
         format.BitsPerSample = 16              ' 采样位数：16Bit
         format.Channels = 1                    ' 声道：Mono
         format.BlockAlign = Convert.ToInt16(format.Channels * (format.BitsPerSample / 8))  ' 单位采样点的字节数 
@@ -54,45 +49,41 @@ Public Class SoundRecord
     ''' <summary>
     ''' 设定录音结束后保存的文件,包括路径
     ''' </summary>
-    ''' <param name="filename">保存wav文件的路径名</param>
-    Public Sub SetFileName(ByVal filename As String)
-        mFileName = filename
+    ''' <param name="FileName">保存wav文件的路径名</param>
+    Public Sub SetFileName(ByVal FileName As String)
+        Me.FileName = FileName
     End Sub
 
     ''' <summary>
     ''' 开始录音
     ''' </summary>
-    Public Sub RecStart()
+    Public Sub RecordStart()
         ' 创建录音文件
         CreateSoundFile()
         ' 创建一个录音缓冲区，并开始录音
         CreateCaptureBuffer()
         ' 建立通知消息,当缓冲区满的时候处理方法
         InitNotifications()
-        mRecBuffer.Start(True)
+        CaptureBuffer.Start(True)
     End Sub
-
 
     ''' <summary>
     ''' 停止录音
     ''' </summary>
-    Public Sub RecStop()
-
-        mRecBuffer.Stop()      ' 调用缓冲区的停止方法，停止采集声音
-        If Not (mNotificationEvent Is Nothing) Then mNotificationEvent.Set()       '关闭通知
-        mNotifyThread.Abort()  '结束线程
+    Public Sub RecordStop()
+        CaptureBuffer.Stop()      ' 调用缓冲区的停止方法，停止采集声音
+        If (NotificationEvent IsNot Nothing) Then NotificationEvent.Set()       '关闭通知
+        NotifyThread.Abort()  '结束线程
         RecordCapturedData()   ' 将缓冲区最后一部分数据写入到文件中
-
         ' 写WAV文件尾
-        mWriter.Seek(4, SeekOrigin.Begin)
-        mWriter.Write(mSampleCount + 36)   ' 写文件长度
-        mWriter.Seek(40, SeekOrigin.Begin)
-        mWriter.Write(mSampleCount)                ' 写数据长度
-
-        mWriter.Close()
-        mWaveFile.Close()
-        mWriter = Nothing
-        mWaveFile = Nothing
+        Writer.Seek(4, SeekOrigin.Begin)
+        Writer.Write(SampleCount + 36)   ' 写文件长度
+        Writer.Seek(40, SeekOrigin.Begin)
+        Writer.Write(SampleCount)                ' 写数据长度
+        Writer.Close()
+        WaveFile.Close()
+        Writer = Nothing
+        WaveFile = Nothing
     End Sub
 #End Region
 
@@ -103,26 +94,22 @@ Public Class SoundRecord
     ''' </summary>
     ''' <returns>调用成功返回true,否则返回false</returns>
     Private Function InitCaptureDevice() As Boolean
-        ' 获取默认音频捕捉设备
-        Dim devices As CaptureDevicesCollection = New CaptureDevicesCollection()  ' 枚举音频捕捉设备
-        Dim deviceGuid As Guid = Guid.Empty
-
-        If (devices.Count > 0) Then
-            deviceGuid = devices(0).DriverGuid
+        Dim Devices As CaptureDevicesCollection = New CaptureDevicesCollection()  ' 枚举音频捕捉设备
+        Dim DeviceGuid As Guid = Guid.Empty
+        '使用默认音频捕捉设备
+        If (Devices.Count > 0) Then
+            DeviceGuid = Devices(0).DriverGuid
         Else
-
-            MessageBox.Show("系统中没有音频捕捉设备")
+            Debug.Print("系统中没有音频捕捉设备")
             Return False
         End If
-
         ' 用指定的捕捉设备创建Capture对象
         Try
-            mCapDev = New Capture(deviceGuid)
+            CaptureDevice = New Capture(DeviceGuid)
         Catch e As DirectXException
-            MessageBox.Show(e.ToString())
+            Debug.Print("错误：" & e.ToString())
             Return False
         End Try
-
         Return True
     End Function
 
@@ -131,26 +118,26 @@ Public Class SoundRecord
     ''' </summary>
     Private Sub CreateCaptureBuffer()
         ' 缓冲区的描述对象
-        Dim bufferdescription As CaptureBufferDescription = New CaptureBufferDescription()
-        If Not (mNotify Is Nothing) Then
-            mNotify.Dispose()
-            mNotify = Nothing
+        Dim BufferDescription As CaptureBufferDescription = New CaptureBufferDescription()
+        If (NotifyObject IsNot Nothing) Then
+            NotifyObject.Dispose()
+            NotifyObject = Nothing
         End If
-        If Not (mRecBuffer Is Nothing) Then
-            mRecBuffer.Dispose()
-            mRecBuffer = Nothing
+        If (CaptureBuffer IsNot Nothing) Then
+            CaptureBuffer.Dispose()
+            CaptureBuffer = Nothing
         End If
-        ' 设定通知的大小,默认为1s钟
-        mNotifySize = IIf((1024 > mWavFormat.AverageBytesPerSecond / 8), 1024, (mWavFormat.AverageBytesPerSecond / 8))
-        mNotifySize -= mNotifySize Mod mWavFormat.BlockAlign
-        ' 设定缓冲区大小
-        mBufferSize = mNotifySize * cNotifyNum
-        ' 创建缓冲区描述
-        bufferdescription.BufferBytes = mBufferSize
-        bufferdescription.Format = mWavFormat           ' 录音格式
+        '设定通知的大小,默认为1s
+        NotifySize = IIf((1024 > WaveFormat.AverageBytesPerSecond / 8), 1024, (WaveFormat.AverageBytesPerSecond / 8))
+        NotifySize -= NotifySize Mod WaveFormat.BlockAlign
+        '设定缓冲区大小
+        BufferSize = NotifySize * NotifyCount
+        '创建缓冲区描述
+        BufferDescription.BufferBytes = BufferSize
+        BufferDescription.Format = WaveFormat           ' 录音格式
         ' 创建缓冲区
-        mRecBuffer = New CaptureBuffer(bufferdescription, mCapDev)
-        mNextCaptureOffset = 0
+        CaptureBuffer = New CaptureBuffer(BufferDescription, CaptureDevice)
+        NextCaptureOffset = 0
     End Sub
 
     ''' <summary>
@@ -158,26 +145,26 @@ Public Class SoundRecord
     ''' </summary>
     ''' <returns>是否成功</returns>
     Private Function InitNotifications() As Boolean
-        If (mRecBuffer Is Nothing) Then
-            MessageBox.Show("未创建录音缓冲区")
+        If (CaptureBuffer Is Nothing) Then
+            Debug.Print("未创建录音缓冲区")
             Return False
         End If
         ' 创建一个通知事件,当缓冲队列满了就激发该事件.
-        mNotificationEvent = New AutoResetEvent(False)
+        NotificationEvent = New AutoResetEvent(False)
         ' 创建一个线程管理缓冲区事件
-        If (mNotifyThread Is Nothing) Then
-            mNotifyThread = New Thread(New ThreadStart(AddressOf WaitThread))
-            mNotifyThread.Start()
+        If (NotifyThread Is Nothing) Then
+            NotifyThread = New Thread(New ThreadStart(AddressOf WaitThread))
+            NotifyThread.Start()
         End If
         ' 设定通知的位置
-        Dim PositionNotify(cNotifyNum) As BufferPositionNotify
-        For i As Integer = 0 To cNotifyNum - 1
-            PositionNotify(i) = New BufferPositionNotify
-            PositionNotify(i).Offset = (mNotifySize * i) + mNotifySize - 1
-            PositionNotify(i).EventNotifyHandle = mNotificationEvent.SafeWaitHandle.DangerousGetHandle()
+        Dim PositionNotify(NotifyCount) As BufferPositionNotify
+        For Index As Integer = 0 To NotifyCount - 1
+            PositionNotify(Index) = New BufferPositionNotify
+            PositionNotify(Index).Offset = (NotifySize * Index) + NotifySize - 1
+            PositionNotify(Index).EventNotifyHandle = NotificationEvent.SafeWaitHandle.DangerousGetHandle()
         Next
-        mNotify = New Notify(mRecBuffer)
-        mNotify.SetNotificationPositions(PositionNotify, cNotifyNum)
+        NotifyObject = New Notify(CaptureBuffer)
+        NotifyObject.SetNotificationPositions(PositionNotify, NotifyCount)
         Return True
     End Function
 
@@ -187,7 +174,7 @@ Public Class SoundRecord
     Private Sub WaitThread()
         Do While True
             ' 等待缓冲区的通知消息
-            mNotificationEvent.WaitOne(Timeout.Infinite, True)
+            NotificationEvent.WaitOne(Timeout.Infinite, True)
             ' 录制数据
             RecordCapturedData()
         Loop
@@ -198,23 +185,23 @@ Public Class SoundRecord
     ''' </summary>
     Private Sub RecordCapturedData()
         Dim CaptureData As Byte() = Nothing
-        Dim ReadPos As Integer = 0, CapturePos As Integer = 0, LockSize As Integer = 0
-        mRecBuffer.GetCurrentPosition(CapturePos, ReadPos) '此处两个参数需要传入地址
-        LockSize = ReadPos - mNextCaptureOffset
+        Dim ReadPosition As Integer = 0, CapturePos As Integer = 0, LockSize As Integer = 0
+        CaptureBuffer.GetCurrentPosition(CapturePos, ReadPosition) '此处两个参数需要传入地址
+        LockSize = ReadPosition - NextCaptureOffset
         ' 因为是循环的使用缓冲区，所以有一种情况下为负：当文以载读指针回到第一个通知点，而Ibuffeoffset还在最后一个通知处
-        If (LockSize < 0) Then LockSize += mBufferSize
-        LockSize -= (LockSize Mod mNotifySize)   ' 对齐缓冲区边界,实际上由于开始设定完整,这个操作是多余的.
+        If (LockSize < 0) Then LockSize += BufferSize
+        LockSize -= (LockSize Mod NotifySize)   ' 对齐缓冲区边界,实际上由于开始设定完整,这个操作是多余的.
         If (LockSize = 0) Then Exit Sub
 
         ' 读取缓冲区内的数据
-        CaptureData = mRecBuffer.Read(mNextCaptureOffset, GetType(Byte), LockFlag.None, LockSize)
+        CaptureData = CaptureBuffer.Read(NextCaptureOffset, GetType(Byte), LockFlag.None, LockSize)
         ' 写入Wav文件
-        mWriter.Write(CaptureData, 0, CaptureData.Length)
+        Writer.Write(CaptureData, 0, CaptureData.Length)
         ' 更新已经录制的数据长度.
-        mSampleCount += CaptureData.Length
+        SampleCount += CaptureData.Length
         ' 移动录制数据的起始点,通知消息只负责指示产生消息的位置,并不记录上次录制的位置
-        mNextCaptureOffset += CaptureData.Length
-        mNextCaptureOffset = mNextCaptureOffset Mod mBufferSize ' Circular buffer
+        NextCaptureOffset += CaptureData.Length
+        NextCaptureOffset = NextCaptureOffset Mod BufferSize ' Circular buffer
     End Sub
 
     ''' <summary>
@@ -222,8 +209,8 @@ Public Class SoundRecord
     ''' </summary>
     Private Sub CreateSoundFile()
         ' Open up the wave file for writing.
-        mWaveFile = New FileStream(mFileName, FileMode.Create)
-        mWriter = New BinaryWriter(mWaveFile)
+        WaveFile = New FileStream(FileName, FileMode.Create)
+        Writer = New BinaryWriter(WaveFile)
         '************************************************************************** 
         'Here Is where the file will be created. A 
         'wave File Is a RIFF file, which has chunks 
@@ -251,42 +238,42 @@ Public Class SoundRecord
         'Bytes 8 -: Actual sample data. 
         '***************************************************************************
         ' Set up file with RIFF chunk info.
-        Dim ChunkRiff As Char() = {"R", "I", "F", "F"}
-        Dim ChunkType As Char() = {"W", "A", "V", "E"}
-        Dim ChunkFmt As Char() = {"f", "m", "t", " "}
-        Dim ChunkData As Char() = {"d", "a", "t", "a"}
+        Dim ChunkRIFF As Char() = {"R", "I", "F", "F"}
+        Dim ChunkTYPE As Char() = {"W", "A", "V", "E"}
+        Dim ChunkFMT As Char() = {"f", "m", "t", " "}
+        Dim ChunkDATA As Char() = {"d", "a", "t", "a"}
 
-        Dim shPad As Short = 1                ' File padding
-        Dim nFormatChunkLength As Integer = &H10  ' Format chunk length.
-        Dim nLength As Integer = 0                ' File length, minus first 8 bytes Of RIFF description. This will be filled In later.
-        Dim shBytesPerSample As Short = 0     ' Bytes per sample.
+        Dim FilePadding As Short = 1                ' File padding
+        Dim FormatChunkLength As Integer = &H10  ' Format chunk length.
+        Dim FileLength As Integer = 0                ' File length, minus first 8 bytes Of RIFF description. This will be filled In later.
+        Dim BytesPerSample As Short = 0     ' Bytes per sample.
 
         ' 一个样本点的字节数目
-        If (mWavFormat.BitsPerSample = 8 And mWavFormat.Channels = 1) Then
-            shBytesPerSample = 1
-        ElseIf ((mWavFormat.BitsPerSample = 8 And mWavFormat.Channels = 2) Or (mWavFormat.BitsPerSample = 16 And mWavFormat.Channels = 1)) Then
-            shBytesPerSample = 2
-        ElseIf (mWavFormat.BitsPerSample = 16 And mWavFormat.Channels = 2) Then
-            shBytesPerSample = 4
+        If (WaveFormat.BitsPerSample = 8 And WaveFormat.Channels = 1) Then
+            BytesPerSample = 1
+        ElseIf ((WaveFormat.BitsPerSample = 8 And WaveFormat.Channels = 2) Or (WaveFormat.BitsPerSample = 16 And WaveFormat.Channels = 1)) Then
+            BytesPerSample = 2
+        ElseIf (WaveFormat.BitsPerSample = 16 And WaveFormat.Channels = 2) Then
+            BytesPerSample = 4
         End If
         ' RIFF 块
-        mWriter.Write(ChunkRiff)
-        mWriter.Write(nLength)
-        mWriter.Write(ChunkType)
+        Writer.Write(ChunkRIFF)
+        Writer.Write(FileLength)
+        Writer.Write(ChunkTYPE)
 
         ' WAVE块
-        mWriter.Write(ChunkFmt)
-        mWriter.Write(nFormatChunkLength)
-        mWriter.Write(shPad)
-        mWriter.Write(mWavFormat.Channels)
-        mWriter.Write(mWavFormat.SamplesPerSecond)
-        mWriter.Write(mWavFormat.AverageBytesPerSecond)
-        mWriter.Write(shBytesPerSample)
-        mWriter.Write(mWavFormat.BitsPerSample)
+        Writer.Write(ChunkFMT)
+        Writer.Write(FormatChunkLength)
+        Writer.Write(FilePadding)
+        Writer.Write(WaveFormat.Channels)
+        Writer.Write(WaveFormat.SamplesPerSecond)
+        Writer.Write(WaveFormat.AverageBytesPerSecond)
+        Writer.Write(BytesPerSample)
+        Writer.Write(WaveFormat.BitsPerSample)
 
         ' 数据块
-        mWriter.Write(ChunkData)
-        mWriter.Write(0)   ' The sample length will be written in later.
+        Writer.Write(ChunkData)
+        Writer.Write(0)   ' The sample length will be written in later.
     End Sub
 #End Region
 
