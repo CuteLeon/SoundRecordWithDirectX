@@ -6,7 +6,7 @@
 
     Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
         SoundRecorder = New SoundRecord
-        FileName = "test_" & My.Computer.Clock.TickCount & ".wav"
+        FileName = IO.Path.GetTempPath & "Sound-" & My.Computer.Clock.TickCount.ToString & ".wav"
         SoundRecorder.SetFileName(FileName)
         SoundRecorder.RecordStart()
     End Sub
