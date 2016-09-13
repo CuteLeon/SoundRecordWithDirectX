@@ -4,6 +4,13 @@ Imports Microsoft.DirectX
 Imports Microsoft.DirectX.DirectSound
 
 Public Class SoundRecord
+    ''' <summary>
+    ''' 为了正常使用 DirectX 录制音频，需要做到以下：
+    ''' 1.App.config 文件里"startup"标签内后加" useLegacyV2RuntimeActivationPolicy="true""
+    ''' 2.并把 [\项目名称\.exe.config] 文件与 EXE 可执行程序在同一目录
+    ''' 如果出现 [LoaderLock] 错误：按下 "Ctrl+Alt+E"(调试\窗口\异常设置) 打开 异常设置，找到 "Managed Debuggin Assistants-" 取消勾选"LoaderLock"。
+    ''' 或者直接 "继续"
+    ''' </summary>
 
 #Region "成员数据"
     Private CaptureDevice As Capture = Nothing ' 音频捕捉设备
@@ -86,7 +93,6 @@ Public Class SoundRecord
         WaveFile = Nothing
     End Sub
 #End Region
-
 
 #Region "对内操作函数"
     ''' <summary>
